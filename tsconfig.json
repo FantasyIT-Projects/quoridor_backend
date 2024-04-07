@@ -1,0 +1,9 @@
+{
+  "include": ["env.d.ts", "**/*", "**/*.ts", "**/*.vue"],
+  "exclude": ["**/__tests__/*","dist"],
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "baseUrl": "."
+  }
+}
