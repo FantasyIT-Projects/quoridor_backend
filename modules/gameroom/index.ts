@@ -1,8 +1,6 @@
-import { addCards, toCleanCard } from "./util/card";
-import { GAME_OPERATES, ICard, IGame, IPlayer } from "../../interfaces/game";
-import { applyCalc, discardCard, drawCard, endGame, initGame, isValidPutCard, nxtPlayer, putCard, hasMultiPut } from "../../modules/gameroom/util/game";
-import { CARD_SCORE } from "../../config/cards";
-import { shuffleArray } from "./util/misc";
+import { isOpValid } from "modules/gameroom/util/valid";
+import { IGame, IOp, IPlayer, OPERATE_TYPE } from "../../interfaces/game";
+import { initGame } from "../../modules/gameroom/util/game";
 type roomMgrOps = {
     send(group: string, data: Record<string, any> | String, exceptConId?: number): void;
     sendPlayer(conId: number, data: Record<string, any> | String): void;
@@ -14,36 +12,6 @@ export default class Room {
     player: IPlayer[]
     id: string;
     roomMgr: roomMgrOps
-    data: {
-        toPutCard: ICard[],
-        toPutPics: { select: ICard[], count: number, optGrp?: number, title?: string }[],
-        toPutPinnedCard: ICard[],
-        toPutAdd?: ICard,
-        confirmedCha: {
-            cards: ICard[],
-            pics: { select: ICard[], count: number }[],
-            player: number,
-            do: boolean
-        }[],
-        calcFrom: number,
-        calcPutCard: boolean,
-        confirmedAntiCalc: {
-            player: number,
-            do: boolean
-        }[],
-        autoManaged: number[],
-        playerSort: Record<number, number>,
-    } = {
-            toPutCard: [],
-            toPutPics: [],
-            toPutPinnedCard: [],
-            confirmedCha: [],
-            confirmedAntiCalc: [],
-            calcFrom: 0,
-            calcPutCard: false,
-            autoManaged: [],
-            playerSort: [],
-        }
     pingDataTimeDown = 0;
     pingTick = 0;
     hasPongPlayer: Record<number, number> = {};
@@ -56,65 +24,47 @@ export default class Room {
         this.game = undefined;
         this.observer = [];
         this.on("ready", this.onReady.bind(this));
-        this.on("setProfile", this.onSetProfile.bind(this));
-        this.on("putCard", this.onPutCard.bind(this));
-        this.on("putCardSelect", this.onPutCardSelect.bind(this));
-        this.on("cha", this.onCha.bind(this));
-        this.on("discard", this.onDiscardCard.bind(this));
-        this.on("draw", this.onDrawCard.bind(this));
-        this.on("calc", this.onCalc.bind(this));
-        this.on("antiCalc", this.onAntiCalc.bind(this));
         this.on("msg", this.onMessage.bind(this));
         this.on("pong", this.onPong.bind(this));
+        this.on("chess", this.onChess.bind(this));
+        this.on("wall", this.onWall.bind(this));
+        this.on("metadata", this.onMetadata.bind(this));
     }
-    join(uid: string, conId: number, name: string) {
+
+    join(player: IPlayer) {
         if (this.game) {
             for (let i = 0; i < this.game.players.length; i++) {
                 let element = this.game.players[i];
-                if (element.id == uid) {
-                    if (this.data.autoManaged.includes(element.internalId)) {
-                        this.game.players[i].ready = true;
-                        this.game.players[i].internalId = conId;
+                if (element.id == player.id) {
+                    if (element.offline) {
+                        this.game.players[i].internalId = player.internalId!;
                         this.game.players[i].offline = false;
-                        this.data.autoManaged.splice(this.data.autoManaged.indexOf(element.internalId), 1);
-                        this.sendPlayer(conId, { type: "hello", hasGame: true })
-                        this.sendPlayer(conId, {
-                            type: "start",
-                            id: conId,
-                            game: this.game,
-                        })
-                        console.log(`玩家${element.name}回到游戏`);
                         return true;
                     }
                 }
             }
-            console.log(`玩家${name}开始旁观`);
-            this.observer.push({ id: uid, internalId: conId, name: name, score: 0, mark: {}, profile: {} });
-            this.sendPlayer(conId, { type: "observer", hasGame: true, game: this.game });
+        }
+        let curp: IPlayer = JSON.parse(JSON.stringify(player));
+        if (this.player.find((p) => p.name == player.name)) {
+            this.observer.push(curp);
+            console.log(`[PLAYER]玩家${player.name}成为旁观者`);
             return true;
         }
-        if (this.player.find((p) => p.id == uid)) {
-            console.log(`玩家${name}开始旁观`);
-            this.observer.push({ id: uid, internalId: conId, name: name, score: 0, mark: {}, profile: {} });
-            this.sendPlayer(conId, { type: "observer" });
-            return true;
-        }
-        let curp: IPlayer = { id: uid, internalId: conId, name: name, score: 0, mark: {}, profile: {} };
+        curp.ready = false;
+        curp.offline = false;
         this.player.push(curp);
         this.player.forEach((p) => {
             p.ready = false;
         });
         //等待玩家加入被房间管理系统确认后才能发送同步信息
         setTimeout(() => {
-            this.sendPlayer(conId, { type: "hello" })
+            this.sendPlayer(player.internalId, { type: "hello" })
             this.send({
-                type: "join",
-                id: conId,
-                playerId: uid,
+                type: "room",
                 player: this.player
             });
-        }, 0)
-        console.log(`玩家${name}加入游戏`);
+        }, 0);
+        console.log(`玩家${player.name}加入游戏`);
         return true;
     }
     leave(conId: number) {
@@ -123,10 +73,6 @@ export default class Room {
         if (obs) {
             console.log(`旁观者${obs.name}离开了房间`);
             this.observer = this.observer.filter((p) => p.internalId != conId);
-            this.send({
-                type: "leaveObs",
-                player: obs
-            })
             return;
         }
         //离开的是玩家
@@ -141,43 +87,34 @@ export default class Room {
                 } else {
                     this.player.find((p) => p.internalId == conId).internalId = obsWithSameId.internalId;
                 }
-                this.sendPlayer(obsWithSameId.internalId, { type: "hello", hasGame: true });
-                this.maskedSendPlayer(obsWithSameId.internalId, {
-                    type: "takeGame",
-                    game: this.game
-                })
+                if (this.game) {
+                    this.sendPlayer(obsWithSameId.internalId, { type: "start", game: this.game });
+                }
                 console.log(`玩家${obsWithSameId.name}接管了游戏`);
             } else if (this.game) {//无同ID玩家且游戏已经开始：加入托管名单
-                this.data.autoManaged.push(curp.internalId);
                 this.game.players.find((p) => p.internalId == conId).offline = true;
-                this.onCheckAutoManaged(curp.internalId);
-                console.log(`玩家${curp.name}自动托管`);
+                console.log(`玩家${curp.name}离线`);
             } else { //无同ID玩家且游戏未开始：直接退出
                 this.player = this.player.filter((p) => p.internalId != conId);
             }
 
             this.send({
-                type: "leave",
-                player: this.player,
-                id: conId,
-                game: this.game
+                type: "room",
+                players: this.player
             })
         }
     }
-    onSetProfile(conId: number, data: Record<string, any>) {
+    onMetadata(conId: number, data: Record<string, any>) {
         let curp = this.player.find((p) => p.internalId == conId);
         if (curp) {
             if (this.game) {
                 let p = this.game.players.find((p) => p.internalId == conId)
-                if (p) p.profile = data.profile;
+                if (p) p.metadata = data.metadata;
             }
-            curp.profile = data.profile;
+            curp.metadata = data.metadata;
             this.send({
-                type: "setProfile",
-                id: conId,
-                profile: data.profile,
-                player: this.player,
-                game: this.game
+                type: "room",
+                players: this.player
             })
         }
     }
@@ -218,484 +155,35 @@ export default class Room {
             })
         }
     }
-    send(msg: string | Object, unmasked = false) {
-        if (unmasked) {
-            this.roomMgr.send(this.id, msg);
-        } else {
-            this.maskedSend(msg);
-        }
+    send(msg: string | Object) {
+        this.roomMgr.send(this.id, msg);
     }
     sendPlayer(conId: number, msg: string | Object) {
         this.roomMgr.sendPlayer(conId, msg);
-    }
-    maskedSend(msg: any) {
-        if (msg.game && msg.game.players) {
-            this.game.players.forEach((p: IPlayer) => {
-                let tmpMsg = JSON.parse(JSON.stringify(msg));
-                tmpMsg.game.allCards.cards = tmpMsg.game.allCards.cards.map((): ICard => ({ id: "JOK", color: 2 }))
-                tmpMsg.game.players = tmpMsg.game.players.map((pt: IPlayer) => {
-                    if (p.internalId != pt.internalId) {
-                        pt.hand.cards = pt.hand.cards.map((): ICard => ({ id: "JOK", color: 2 }))
-                    }
-                    return pt;
-                })
-                this.sendPlayer(p.internalId, tmpMsg);
-            })
-
-
-            let fullMasked = JSON.parse(JSON.stringify(msg));
-            fullMasked.game.players = fullMasked.game.players.map((pt: IPlayer) => {
-                pt.hand.cards = pt.hand.cards.map((): ICard => ({ id: "JOK", color: 2 }))
-                return pt;
-            })
-            this.observer.forEach((p: IPlayer) => {
-                this.sendPlayer(p.internalId, fullMasked);
-            })
-        } else {
-            this.roomMgr.send(this.id, msg);
-        }
-    }
-    maskedSendPlayer(conId: number, msg: any) {
-        if (!msg.game) return this.sendPlayer(conId, msg);
-        let tmpMsg = JSON.parse(JSON.stringify(msg));
-        tmpMsg.game.allCards.cards = tmpMsg.game.allCards.cards.map((): ICard => ({ id: "JOK", color: 2 }))
-        tmpMsg.game.players = tmpMsg.game.players.map((pt: IPlayer) => {
-            if (conId != pt.internalId) {
-                pt.hand.cards = pt.hand.cards.map((): ICard => ({ id: "JOK", color: 2 }))
-            }
-            return pt;
-        })
-        this.sendPlayer(conId, tmpMsg);
     }
     on(type: string, cb: (conId: number, data: any) => void) {
         this.roomMgr.on(type, this.id, cb);
     }
     isPlayer(conId: number) {
-        return this.game.players[this.game.stage.playerIndex].internalId == conId;
+        return this.game.players[this.game.current].internalId == conId;
     }
     onStart() {
-        this.player.forEach((p, idx) => {
-            this.data.playerSort[p.internalId] = idx
-        });
-        shuffleArray(this.player);
-        this.game = initGame(this.player);
-        this.send({
-            type: "firstCard",
-            card: this.game.stage.data.firstCard
-        })
+        this.game = initGame(this.id, this.player);
         this.send({
             type: "start",
-            game: this.game,
+            game: this.game
         });
-    }
-
-    /**插牌 */
-    onCha(conId: number, data: Record<string, any>) {
-        if (this.isPlayer(conId)) return;
-        if (!this.game) return;
-        if (!this.game.players.find((p) => p.internalId == conId)) return;
-        if (this.game.stage.operate != GAME_OPERATES.WAIT_CHA) return;
-        if (this.data.confirmedCha.find((data) => data.player == conId)) {
-            return;
-        }
-        if (data.do) {
-            try {
-                data.cards = data.cards.map(toCleanCard);
-                this.data.confirmedCha.push({
-                    cards: data.cards,
-                    pics: isValidPutCard(this.game, data.cards, undefined, this.game.lastDiscard),
-                    player: conId,
-                    do: data.do
-                })
-            } catch (e) {
-                this.sendPlayer(conId, {
-                    type: "error",
-                    msg: e.message
-                });
-                return;
-            }
-        } else {
-            this.data.confirmedCha.push({
-                cards: [],
-                pics: [],
-                player: conId,
-                do: data.do
-            })
-        }
-        if (this.data.confirmedCha.length == this.game.players.length - 1) {
-            this.onChaDone();
-        }
-    }
-    onChaDone() {
-        let minFakeCnt = 10;
-        let maxData: any;
-        for (let chaOp of this.data.confirmedCha) {
-            if (chaOp.do) {
-                if (chaOp.pics.length < minFakeCnt) {
-                    minFakeCnt = chaOp.pics.length;
-                    maxData = chaOp;
-                } else if (chaOp.pics.length == minFakeCnt) {
-                    for (
-                        let i = this.game.stage.playerIndex, j = 0;
-                        j < this.game.players.length;
-                        i = (i + 1) % this.game.players.length, j++) {
-                        if (this.game.players[i].internalId == chaOp.player) {
-                            maxData = chaOp;
-                            break;
-                        } else if (this.game.players[i].internalId == maxData.player) {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        if (minFakeCnt == 10) {
-            this.game.stage.operate = GAME_OPERATES.PUTCARD;
-            this.game.stage.playerIndex = (this.game.stage.playerIndex + 1) % this.game.players.length;
-            this.send({
-                type: "next",
-                game: this.game,
-                player: this.game.stage.playerIndex,
-            })
-            this.onCheckAutoManaged(this.game.players[this.game.stage.playerIndex].internalId);
-            return;
-        }
-        this.game.stage.operate = GAME_OPERATES.AFTER_CHA;
-        this.game.stage.playerIndex = this.game.players.findIndex((p) => p.internalId == maxData.player);
-        this.send({
-            type: "cha",
-            game: this.game,
-            player: this.game.stage.playerIndex,
-            cards: maxData.cards,
-        })
-        this.data.confirmedCha = [];
-        this.data.toPutCard = maxData.cards;
-        this.data.toPutPics = maxData.pics;
-        this.data.toPutAdd = this.game.lastDiscard;
-        this.data.toPutPinnedCard = [];
-        this.onSendPutCardSelect(maxData.player);
-    }
-    /**摆牌功能区 */
-    onPutCard(conId: number, data: Record<string, any>) {
-        if (!this.game) return;
-        if (!this.isPlayer(conId)) return;
-        if (!this.game.players.find((p) => p.internalId == conId)) return;
-        try {
-            if (!data.putMethod) {
-                if (hasMultiPut(data.cards)) {
-                    this.sendPlayer(conId, {
-                        type: "optSelect",
-                        game: this.game,
-                        player: this.game.stage.playerIndex,
-                        orgData: data,
-                        key: "putMethod",
-                        selections: [
-                            { title: "选择摆顺子", value: 1 },
-                            { title: "选择摆对", value: 2 },
-                        ]
-                    });
-                    return;
-                }
-            }
-            data.cards = data.cards.map(toCleanCard);
-            this.data.toPutPics = isValidPutCard(this.game, data.cards, this.game.players[this.game.stage.playerIndex].stored, undefined, data.putMethod === 1);
-            this.data.toPutCard = data.cards;
-            this.data.toPutAdd = undefined;
-            this.data.toPutPinnedCard = [];
-            this.onSendPutCardSelect(conId);
-        } catch (e) {
-            this.sendPlayer(conId, {
-                type: "error",
-                msg: e.message
-            });
-            return;
-        }
-        this.data.calcPutCard = true;
-        this.send({
-            type: "putCard",
-            game: this.game,
-            player: this.game.stage.playerIndex,
-            cards: data.cards
-        })
-    }
-    onPutCardSelect(conId: number, data: Record<string, any>) {
-        if (!this.game) return;
-        if (!this.isPlayer(conId)) return;
-        if (!this.game.players.find((p) => p.internalId == conId)) return;
-        if (!this.data.toPutPics) return;
-        let cardGrp1: { select: ICard[], count: number } = this.data.toPutPics.shift();
-        data.selection = data.selection.map(toCleanCard);
-        let selectedCards: ICard[] = data.selection;
-        if (selectedCards.length != cardGrp1.count) {
-            this.sendPlayer(conId, { type: "error", msg: "选择数量不正确" });
-            return;
-        }
-        selectedCards.forEach((selectedCard: ICard) => {
-            if (!cardGrp1.select.find((card: ICard) => card.id == selectedCard.id)) {
-                this.sendPlayer(conId, {
-                    type: "error",
-                    msg: "选择错误"
-                });
-                return;
-            }
-            this.data.toPutPinnedCard.push(selectedCard);
-        })
-        this.onSendPutCardSelect(conId);
-    }
-    onSendPutCardSelect(conId: number) {
-        while (true) {
-            if (this.data.toPutPics.length == 0) {
-                this.onPutCardDone(conId);
-            } else {
-                if (this.data.toPutPics[0].count == 0) {
-                    this.data.toPutPics.shift();
-                    continue;
-                }
-                if (this.data.toPutPics[0].select.length == 1) {
-                    let cardGrp1: { select: ICard[], count: number } = this.data.toPutPics.shift();
-                    this.data.toPutPinnedCard.push(cardGrp1.select[0])
-                    continue;
-                }
-                this.sendPlayer(conId, {
-                    type: "putCardSelect",
-                    game: this.game,
-                    player: this.game.stage.playerIndex,
-                    selection: this.data.toPutPics[0].select,
-                    count: this.data.toPutPics[0].count
-                })
-            }
-            break;
-        }
-    }
-    onPutCardDone(conId: number) {
-        putCard(this.game, this.data.toPutCard, this.data.toPutPinnedCard, this.data.toPutAdd);
-        this.data.toPutPinnedCard.forEach((card) => {
-            this.game.pinnedCard.push(card);
-        });
-        this.send({
-            type: "putCardDone",
-            game: this.game,
-            player: this.game.stage.playerIndex,
-            cards: this.data.toPutCard,
-            pinnedCard: this.data.toPutPinnedCard,
-            add: this.data.toPutAdd
-        });
-    }
-    /**弃牌和抽牌 */
-    onDrawCard(conId: number, data: Record<string, any>) {
-        if (!this.game) return;
-        if (!this.isPlayer(conId)) return;
-        if (!this.game.players.find((p) => p.internalId == conId)) return;
-        if (this.game.stage.operate != GAME_OPERATES.PUTCARD && this.game.stage.operate != GAME_OPERATES.AFTER_CHA) return;
-        if (this.game.allCards.cards.length == 0) {
-            this.onNoCard();
-            return;
-        }
-        let card = drawCard(this.game);
-        this.game.stage.operate = GAME_OPERATES.DISCARD;
-        this.send({
-            type: "drawCard",
-            game: this.game,
-            player: this.game.stage.playerIndex
-        });
-        this.onCheckAutoManaged(this.game.players[this.game.stage.playerIndex].internalId);
-    }
-    onNoCard() {
-        this.game.stage.operate = GAME_OPERATES.SCORE;
-        this.game.players.forEach((p) => {
-            p.ready = false;
-        })
-        this.send({
-            type: "calcDone",
-            game: this.game,
-            player: -1,
-            res: this.game.players.map(_ => 0)
-        }, true);
-    }
-
-    onDiscardCard(conId: number, data: Record<string, any>) {
-        if (!this.game) return;
-        if (!this.isPlayer(conId)) return;
-        if (!this.game.players.find((p) => p.internalId == conId)) return;
-        if (this.game.stage.operate != GAME_OPERATES.DISCARD) return;
-        try {
-            data.card = toCleanCard(data.card);
-            discardCard(this.game, data.card);
-        } catch (e) {
-            this.sendPlayer(conId, {
-                type: "error",
-                msg: e.message
-            });
-            return;
-        }
-        this.game.stage.operate = GAME_OPERATES.WAIT_CHA;
-        this.send({
-            type: "discardCard",
-            game: this.game,
-            player: this.game.stage.playerIndex,
-            card: data.card
-        });
-        this.data.calcPutCard = false;
-        this.data.confirmedCha = []
-        if (this.game.players.length == 1) {
-            this.onChaDone();
-        }
-        this.onCheckAutoManaged();
-    }
-    onCalc(conId: number, data: Record<string, any>) {
-        if (!this.game) return;
-        if (!this.isPlayer(conId)) return;
-        if (!this.game.players.find((p) => p.internalId == conId)) return;
-        this.game.stage.operate = GAME_OPERATES.CALC;
-        this.data.calcFrom = conId;
-        this.data.confirmedAntiCalc = [];
-        if (this.data.calcPutCard && this.game.players[this.game.stage.playerIndex].hand.cards.length == 0) {
-            //-20不允许反算
-            this.onAntiCalcDone();
-        } else {
-            this.send({
-                type: "calc",
-                game: this.game,
-                player: this.game.stage.playerIndex
-            });
-            if (this.game.players.length == 1) {
-                this.onAntiCalcDone();
-            }
-            this.onCheckAutoManaged();
-        }
-    }
-    onAntiCalc(conId: number, data: Record<string, any>) {
-        if (this.isPlayer(conId)) return;
-        if (!this.game) return;
-        if (!this.game.players.find((p) => p.internalId == conId)) return;
-        if (this.game.stage.operate != GAME_OPERATES.CALC) return;
-        if (this.data.confirmedAntiCalc.find((data) => data.player == conId)) {
-            return;
-        }
-        this.data.confirmedAntiCalc.push({
-            player: conId,
-            do: data.do
-        })
-        if (this.data.confirmedAntiCalc.length == this.game.players.length - 1) {
-            this.onAntiCalcDone();
-        }
-    }
-    onAntiCalcDone() {
-        let antiCalcInternalId = [];
-        this.data.confirmedAntiCalc.forEach((data) => {
-            if (data.do) {
-                antiCalcInternalId.push(data.player);
-            }
-        });
-        let calcRes = applyCalc(this.game, this.data.calcFrom, antiCalcInternalId, this.data.calcPutCard);
-        this.data.calcPutCard = false;
-        this.game.stage.operate = GAME_OPERATES.SCORE;
-        this.game.players.forEach((p) => {
-            p.ready = false;
-        });
-        this.send({
-            type: "calcDone",
-            game: this.game,
-            player: this.data.calcFrom,
-            antiCalc: antiCalcInternalId,
-            res: calcRes
-        }, true);
-        this.onCheckAutoManaged();
-    }
-    onNextRound() {
-        for (let p of this.game.players) {
-            if (p.score >= 250) {
-                this.game.players = this.game.players.sort((a, b) => {
-                    return this.data.playerSort[a.internalId] - this.data.playerSort[b.internalId];
-                })
-                this.player = this.game.players;
-                for (let p of this.player) {
-                    p.ready = false;
-                }
-                this.player = this.player.filter((p) => this.data.autoManaged.indexOf(p.internalId) == -1);
-                this.data.autoManaged = [];
-                this.send({
-                    type: "gameOver",
-                    game: this.game,
-                }, true)
-                this.game = undefined;
-                return;
-            }
-        }
-        endGame(this.game);
-        this.send({
-            type: "firstCard",
-            card: this.game.stage.data.firstCard
-        })
-        this.data.confirmedAntiCalc = [];
-        this.game.stage.operate = GAME_OPERATES.DISCARD;
-
-        this.send({
-            type: "next",
-            game: this.game,
-            player: this.game.stage.playerIndex,
-        })
-        this.onCheckAutoManaged(this.game.players[this.game.stage.playerIndex].internalId);
     }
     onReady(conId: number, data: Record<string, any>) {
-        if (this.game) {
-            let player = this.game.players.find((p) => p.internalId == conId);
-            if (!player) return;
-            if (player.ready == !!(data.ready)) return;
-            this.game.players.find((p) => p.internalId == conId).ready = !!(data.ready);
-            this.send({
-                type: "ready",
-                game: this.game,
-            }, true)
-            if (this.game.players.every((p) => p.ready)) {
-                this.onNextRound();
-            }
-        } else {
-            3
-            if (!this.player.find((p) => p.internalId == conId))
-                return;
-            this.player.find((p) => p.internalId == conId).ready = !!(data.ready);
-            this.send({
-                type: "ready",
-                game: false,
-                player: this.player
-            })
-            if (this.player.every((p) => p.ready)) {
-                this.onStart();
-            }
-        }
-    }
-    onCheckAutoManaged(conId?: number, ignChk?: boolean) {
-        if (!this.game) return;
-        if (!conId) return this.data.autoManaged.forEach(d => this.onCheckAutoManaged(d, true));
-        if (!ignChk) {
-            if (!this.data.autoManaged.includes(conId)) return;
-        }
-        if (this.isPlayer(conId)) {
-            let p = this.game.players.find((p) => p.internalId == conId);
-            if (this.game.stage.operate == GAME_OPERATES.PUTCARD) this.onDrawCard(conId, {});
-            else if (this.game.stage.operate == GAME_OPERATES.DISCARD) {
-                let maxScore = 0, maxIndex = 0;
-                for (let i = 0; i < p.hand!.cards.length - 1; i++) {
-                    if (CARD_SCORE[p.hand!.cards[i].id] > maxScore) {
-                        maxScore = CARD_SCORE[p.hand!.cards[i].id];
-                        maxIndex = i;
-                    }
-                }
-                this.onDiscardCard(conId, { card: p.hand!.cards[maxIndex] });
-            }
-        } else {
-            if (this.game.stage.operate == GAME_OPERATES.WAIT_CHA) {
-                if (!this.data.confirmedCha.find((data) => data.player == conId)) {
-                    this.onCha(conId, { do: false });
-                }
-            } else if (this.game.stage.operate == GAME_OPERATES.CALC) {
-                if (!this.data.confirmedAntiCalc.find((data) => data.player == conId)) {
-                    this.onAntiCalc(conId, { do: false });
-                }
-            } else if (this.game.stage.operate == GAME_OPERATES.SCORE) {
-                this.onReady(conId, { ready: true });
-            }
+        if (!this.player.find((p) => p.internalId == conId))
+            return;
+        this.player.find((p) => p.internalId == conId).ready = !!(data.ready);
+        this.send({
+            type: "room",
+            player: this.player
+        })
+        if (this.player.every((p) => p.ready)) {
+            this.onStart();
         }
     }
     onMessage(conId: number, data: Record<string, any>) {
@@ -703,10 +191,50 @@ export default class Room {
             type: "msg",
             from: data.from,
             msg: data.msg
-        }, true);
+        });
     }
     onPong(conId: number, data: Record<string, any>) {
         let delay = Date.now() - this.pingTick;
         this.hasPongPlayer[conId] = delay;
+    }
+    onNextRound(op: IOp) {
+        //TODO:此处，位于每次OP后，应该执行胜负判断。以及：进行回合时跳过离线玩家&获胜玩家
+        this.game.current++;
+        if (this.game.current >= this.game.players.length) {
+            this.game.current = 0;
+        }
+        this.send({
+            type: "stage",
+            current: this.game.current,
+            lastOp: op
+        });
+    }
+    onChess(conId: number, data: Record<string, any>) {
+        if (!this.isPlayer(conId)) return;
+        let op: IOp = {
+            type: OPERATE_TYPE.CHESS,
+            position: [data.position],
+            player: this.game.current
+        }
+        if (isOpValid(this.game, op)) {
+            this.game.chesses[this.game.current].position = op.position[0];
+            this.onNextRound(op);
+        }
+    }
+    onWall(conId: number, data: Record<string, any>) {
+        if (!this.isPlayer(conId)) return;
+        let op: IOp = {
+            type: OPERATE_TYPE.WALL,
+            position: data.position,
+            player: this.game.current
+        }
+        if (isOpValid(this.game, op)) {
+            this.game.walls.push({
+                position: op.position,
+                player: op.player
+            })
+            this.game.players[op.player].wallRest--;
+            this.onNextRound(op);
+        }
     }
 }

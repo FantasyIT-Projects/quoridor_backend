@@ -1,3 +1,4 @@
+import { IPlayer } from "interfaces/game";
 import Room from "../../modules/gameroom";
 import WSS from "../../modules/wss";
 
@@ -19,7 +20,7 @@ export default class {
         wss.on("connect", (conId) => {
             this.conId2Grp[conId] = "";
         });
-        wss.on("reg", this.onReg.bind(this))
+        wss.on("room", this.onRoom.bind(this))
         wss.on("leave", this.onLeave.bind(this))
         wss.on("close", this.onLeave.bind(this))
 
@@ -49,21 +50,25 @@ export default class {
         this.roomEvents[type].push({ id: room, events: [cb] });
     }
     //房间注册
-    onReg(conId: number, dat: Record<string, any>) {
-        this.conId2Meta[conId] = { id: dat.id };
-        if (!this.gameRooms[dat.group]) {
-            this.gameRooms[dat.group] = new Room(dat.group, {
+    onRoom(conId: number, dat: {
+        players: IPlayer,
+        roomId: string
+    }) {
+        dat.players.internalId = conId;
+        this.conId2Meta[conId] = { id: dat.players.name };
+        if (!this.gameRooms[dat.roomId]) {
+            this.gameRooms[dat.roomId] = new Room(dat.roomId, {
                 on: this.on.bind(this),
                 send: this.send.bind(this),
                 sendPlayer: this.sendPlayer.bind(this),
                 closePlayer: this.closePlayer.bind(this),
             });
-            console.log("[ROOM]创建:" + dat.group);
-            this.grpConns[dat.group] = [];
+            console.log("[ROOM]创建:" + dat.roomId);
+            this.grpConns[dat.roomId] = [];
         }
-        if (this.gameRooms[dat.group].join(dat.id, conId, dat.name)) {
-            this.conId2Grp[conId] = dat.group;
-            this.grpConns[dat.group].push(conId);
+        if (this.gameRooms[dat.roomId].join(dat.players)) {
+            this.conId2Grp[conId] = dat.roomId;
+            this.grpConns[dat.roomId].push(conId);
         } else {
             this.wss.send(conId, { type: "error", msg: "该房间当前不可加入，请稍后再试" });
         }
