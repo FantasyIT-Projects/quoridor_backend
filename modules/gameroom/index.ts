@@ -1,5 +1,5 @@
 import { isOpValid } from "modules/gameroom/util/valid";
-import { IGame, IOp, IPlayer, OPERATE_TYPE } from "../../interfaces/game";
+import { IGame, IInternalGame, IOp, IPlayer, OPERATE_TYPE } from "../../interfaces/game";
 import { initGame } from "../../modules/gameroom/util/game";
 type roomMgrOps = {
     send(group: string, data: Record<string, any> | String, exceptConId?: number): void;
@@ -8,7 +8,7 @@ type roomMgrOps = {
     closePlayer(conId: number): void;
 }
 export default class Room {
-    game?: IGame
+    game?: IInternalGame
     player: IPlayer[]
     id: string;
     roomMgr: roomMgrOps

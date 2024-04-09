@@ -1,3 +1,5 @@
+import { Pad } from "modules/gameroom/util/pad"
+
 export type IPlayer = {
     /**
      * 玩家用户名，可能会重复，重复时不应该进入游戏。
@@ -24,6 +26,7 @@ export type IPlayer = {
      */
     metadata:Record<string,string>
 }
+
 export enum OPERATE_TYPE{
     CHESS="chess",
     WALL="wall"
@@ -47,4 +50,7 @@ export type IGame = {
     players:IPlayer[],
     chesses:IChess[],
     walls:IWall[]
+}
+export type IInternalGame = IGame & {
+    pad:Pad
 }
