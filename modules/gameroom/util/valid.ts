@@ -1,6 +1,6 @@
-import { isNoPathOut } from "modules/gameroom/util/game";
+import { isNoPathOut } from "../../../modules/gameroom/util/game";
 import { IChess, IGame, IInternalGame, IOp, IPlayer, IWall, OPERATE_TYPE } from "../../../interfaces/game";
-import { Pad } from "modules/gameroom/util/pad";
+import { Pad } from "../../../modules/gameroom/util/pad";
 export function isOpValid(game: IInternalGame, op: IOp): boolean {
     if (op.type == OPERATE_TYPE.CHESS) {
         return isChessOpValid(game, op);

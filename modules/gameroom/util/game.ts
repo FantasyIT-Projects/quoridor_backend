@@ -84,13 +84,26 @@ export function initGame(roomId: string, players: IPlayer[]): IInternalGame {
             player: i
         })
         game.players[i].wallRest = PLAYER_WALL[players.length];
+        game.players[i].startPosition = CHESS_INITIAL_POS[i];
     }
     if (players.length === 2) {
         game.chesses[1].position = CHESS_INITIAL_POS[2];
+        game.players[1].startPosition = CHESS_INITIAL_POS[2];
     }
     game.chesses.forEach(c => {
         game.pad.addChess(c.position[0], c.position[1], c.player);
     });
 
     return game;
+}
+
+export function isWin(game: IInternalGame,) {
+    let win = true;
+    //TODO:完全没做。需要明天实现
+    // game.chesses.forEach(({ position: [x, y] }) => {
+    //     if (game.pad.isChessOn(x, y)) {
+    //         win = false;
+    //     }
+    // })
+    return win;
 }

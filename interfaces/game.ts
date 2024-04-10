@@ -17,9 +17,25 @@ export type IPlayer = {
      * 连接ID
      */
     internalId?:number,
+    /**
+     * 玩家是否离线
+     */
     offline?:boolean,
+    /**
+     * 玩家是否准备
+     */
     ready?:boolean,
+    /**
+     * 玩家手中剩余的墙数
+     */
     wallRest?:number,
+    /**
+     * 玩家开始时位置
+     */
+    startPosition?:number[],
+    /**
+     * 玩家延迟
+     */
     delay?:number,
     /**
      * 玩家数据

@@ -86,13 +86,16 @@ export class Pad {
         }
 
         if (x1 == x2) {
-            if (this.data[x1 + 1][y1 + 2] != -1 && this.data[x1 - 1][y1 + 2] != -1) {
-                return false;
+            for (let i = y1 + 1; i <= y2 - 1; i++) {
+                if (this.data[x1][i] != -1) {
+                    return false;
+                }
             }
-        }
-        if (y1 == y2) {
-            if (this.data[x1 + 2][y1 - 1] != -1 && this.data[x1 + 2][y1 + 1] != -1) {
-                return false;
+        } else if (y1 == y2) {
+            for (let i = x1 + 1; i <= x2 - 1; i++) {
+                if (this.data[i][y1] != -1) {
+                    return false;
+                }
             }
         }
 
@@ -119,10 +122,18 @@ export class Pad {
         y1 = y1 * 2;
         x2 = x2 * 2;
         y2 = y2 * 2;
-        for (let i = x1; i <= x2; i++) {
-            for (let j = y1; j <= y2; j++) {
-                this.data[i][j] = 1;
-            }
+        if (x1 > x2)
+            [x1, x2] = [x2, x1];
+        if (y1 > y2)
+            [y1, y2] = [y2, y1];
+
+        if (x1 == x2) {
+            for (let i = y1 + 1; i <= y2 - 1; i++)
+                this.data[x1][i] = 1;
+        }
+        if (y1 == y2) {
+            for (let i = x1 + 1; i <= x2 - 1; i++)
+                this.data[i][y1] = 1;
         }
     }
     /**
