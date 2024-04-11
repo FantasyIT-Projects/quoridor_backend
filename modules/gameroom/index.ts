@@ -1,6 +1,6 @@
-import { isOpValid } from "modules/gameroom/util/valid";
+import { isOpValid } from "./util/valid";
 import { IGame, IInternalGame, IOp, IPlayer, OPERATE_TYPE } from "../../interfaces/game";
-import { initGame } from "../../modules/gameroom/util/game";
+import { initGame } from "./util/game";
 type roomMgrOps = {
     send(group: string, data: Record<string, any> | String, exceptConId?: number): void;
     sendPlayer(conId: number, data: Record<string, any> | String): void;

@@ -51,11 +51,11 @@ export default class {
     }
     //房间注册
     onRoom(conId: number, dat: {
-        players: IPlayer,
+        player: IPlayer,
         roomId: string
     }) {
-        dat.players.internalId = conId;
-        this.conId2Meta[conId] = { id: dat.players.name };
+        dat.player.internalId = conId;
+        this.conId2Meta[conId] = { id: dat.player.name };
         if (!this.gameRooms[dat.roomId]) {
             this.gameRooms[dat.roomId] = new Room(dat.roomId, {
                 on: this.on.bind(this),
@@ -66,7 +66,7 @@ export default class {
             console.log("[ROOM]创建:" + dat.roomId);
             this.grpConns[dat.roomId] = [];
         }
-        if (this.gameRooms[dat.roomId].join(dat.players)) {
+        if (this.gameRooms[dat.roomId].join(dat.player)) {
             this.conId2Grp[conId] = dat.roomId;
             this.grpConns[dat.roomId].push(conId);
         } else {
