@@ -1,6 +1,6 @@
 import { isOpValid } from "./util/valid";
 import { IGame, IInternalGame, IOp, IPlayer, OPERATE_TYPE } from "../../interfaces/game";
-import { initGame } from "./util/game";
+import { initGame, isWin } from "./util/game";
 type roomMgrOps = {
     send(group: string, data: Record<string, any> | String, exceptConId?: number): void;
     sendPlayer(conId: number, data: Record<string, any> | String): void;
@@ -198,10 +198,27 @@ export default class Room {
         this.hasPongPlayer[conId] = delay;
     }
     onNextRound(op: IOp) {
-        //TODO:此处，位于每次OP后，应该执行胜负判断。以及：进行回合时跳过离线玩家&获胜玩家
+        if(isWin(this.game, op.player)){
+            const rank = Math.max.apply(this,this.game.players.map(p=>p.win??0))+1;
+            this.send({
+                type: "won",
+                player: op.player,
+                rank
+            });
+        }
         this.game.current++;
         if (this.game.current >= this.game.players.length) {
             this.game.current = 0;
+        }
+        let origin = this.game.current;
+        while (this.game.players[this.game.current].win || this.game.players[this.game.current].offline) {
+            this.game.current++;
+            if (this.game.current >= this.game.players.length) {
+                this.game.current = 0;
+            }
+            if(this.game.current == origin){
+                break;
+            }
         }
         this.send({
             type: "stage",

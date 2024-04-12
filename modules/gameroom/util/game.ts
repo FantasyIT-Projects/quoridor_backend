@@ -97,13 +97,17 @@ export function initGame(roomId: string, players: IPlayer[]): IInternalGame {
     return game;
 }
 
-export function isWin(game: IInternalGame,) {
-    let win = true;
-    //TODO:完全没做。需要明天实现
-    // game.chesses.forEach(({ position: [x, y] }) => {
-    //     if (game.pad.isChessOn(x, y)) {
-    //         win = false;
-    //     }
-    // })
-    return win;
+export function isWin(game: IInternalGame, playerIndex: number) {
+    switch (game.players[playerIndex].startPosition) {
+        case CHESS_INITIAL_POS[0]://[4,0]
+            return game.chesses[playerIndex].position[1] == 8;
+        case CHESS_INITIAL_POS[1]://[0,4]
+            return game.chesses[playerIndex].position[0] == 8;
+        case CHESS_INITIAL_POS[2]://[4,8]
+            return game.chesses[playerIndex].position[1] == 0;
+        case CHESS_INITIAL_POS[3]://[8,4]
+            return game.chesses[playerIndex].position[0] == 0;
+        default:
+            throw new Error(`invalid initial position ${game.players[playerIndex].startPosition}`);
+    }
 }

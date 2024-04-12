@@ -38,6 +38,10 @@ export type IPlayer = {
      */
     delay?:number,
     /**
+     * 玩家是否获胜
+     */
+    win?:number,
+    /**
      * 玩家数据
      */
     metadata:Record<string,string>
