@@ -1,6 +1,6 @@
 import { isOpValid } from "./util/valid";
 import { IGame, IInternalGame, IOp, IPlayer, OPERATE_TYPE } from "../../interfaces/game";
-import { initGame, isWin } from "./util/game";
+import { applyOp, initGame, isWin } from "./util/game";
 type roomMgrOps = {
     send(group: string, data: Record<string, any> | String, exceptConId?: number): void;
     sendPlayer(conId: number, data: Record<string, any> | String): void;
@@ -39,6 +39,14 @@ export default class Room {
                     if (element.offline) {
                         this.game.players[i].internalId = player.internalId!;
                         this.game.players[i].offline = false;
+                        setTimeout(() => {
+                            this.sendPlayer(player.internalId, { type: "hello" })
+                            this.send({
+                                type: "room",
+                                player: this.player
+                            });
+                        }, 0);
+                        console.log(`玩家${player.name}接管了游戏`);
                         return true;
                     }
                 }
@@ -234,7 +242,7 @@ export default class Room {
             player: this.game.current
         }
         if (isOpValid(this.game, op)) {
-            this.game.chesses[this.game.current].position = op.position[0];
+            applyOp(this.game,op);
             this.onNextRound(op);
         }
     }
@@ -250,6 +258,7 @@ export default class Room {
                 position: op.position,
                 player: op.player
             })
+            applyOp(this.game,op);
             this.game.players[op.player].wallRest--;
             this.onNextRound(op);
         }

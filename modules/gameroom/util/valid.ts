@@ -11,6 +11,7 @@ export function isOpValid(game: IInternalGame, op: IOp): boolean {
 
 const directions = [[0, 1], [1, 0], [0, -1], [-1, 0]];
 const skipDirections = [[0, 2], [2, 0], [0, -2], [-2, 0]];
+const cornerDirections = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
 function isChessOpValid(game: IInternalGame, op: IOp): boolean {
     let chess: IChess = game.chesses[op.player];
     for (let direction of directions) {
@@ -34,6 +35,24 @@ function isChessOpValid(game: IInternalGame, op: IOp): boolean {
             }
         }
     }
+
+    for (let direction of cornerDirections) {
+        const [xDir, yDir] = direction;
+        const x = chess.position[0] + xDir;
+        const y = chess.position[1] + yDir;
+        if (op.position[0][0] == x && op.position[0][1] == y) {
+            const ox = chess.position[0];
+            const oy = chess.position[1];
+            const tx = chess.position[0] + xDir * 2;
+            const ty = chess.position[1] + yDir * 2;
+            if(game.pad.isWallBetween(ox,oy,tx,oy) && game.pad.isChessOn(x,oy)){
+                return true;
+            }
+            if(game.pad.isWallBetween(ox,oy,ox,ty) && game.pad.isChessOn(ox,y)){
+                return true;
+            }
+        }
+    }
     return false;
 }
 function isWallOpValid(game: IInternalGame, op: IOp): boolean {
@@ -42,7 +61,7 @@ function isWallOpValid(game: IInternalGame, op: IOp): boolean {
     let x2 = op.position[1][0];
     let y2 = op.position[1][1];
     if (Math.abs(x1 - x2) + Math.abs(y1 - y2) != 2) return false;
-    if (game.pad.isWallOk(x1, y1, x2, y2)) return false;
+    if (!game.pad.isWallOk(x1, y1, x2, y2)) return false;
     let nextPad = new Pad(game.pad);
     nextPad.addWall(x1, y1, x2, y2);
     if (isNoPathOut(game, nextPad)) {

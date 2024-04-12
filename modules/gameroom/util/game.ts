@@ -60,10 +60,10 @@ export function isNoPathOut(game: IInternalGame, nextPad: Pad) {
     }
 
     dfsCheck(0, 0);
-    let result = true;
+    let result = false;
     game.chesses.forEach(({ position: [x, y] }) => {
         if (!reachable[x][y]) {
-            result = false;
+            result = true;
         }
     })
     return result;
