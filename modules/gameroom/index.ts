@@ -100,7 +100,7 @@ export default class Room {
 
             this.send({
                 type: "room",
-                players: this.player
+                player: this.player
             })
         }
     }
@@ -114,7 +114,7 @@ export default class Room {
             curp.metadata = data.metadata;
             this.send({
                 type: "room",
-                players: this.player
+                player: this.player
             })
         }
     }
