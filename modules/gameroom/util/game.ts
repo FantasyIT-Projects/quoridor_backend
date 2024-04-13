@@ -1,4 +1,4 @@
-import { CHESS_INITIAL_POS, PLAYER_WALL, SIZE_H, SIZE_W } from "../../../config/values";
+import { CHESS_INITIAL_POS, PLAYER_WALL, SIZE_H, SIZE_W, WIN_MOD } from "../../../config/values";
 import { IGame, IInternalGame, IOp, IPlayer, OPERATE_TYPE } from "../../../interfaces/game";
 import { Pad } from "../../../modules/gameroom/util/pad";
 import { isOpValid } from "../../../modules/gameroom/util/valid";
@@ -15,6 +15,7 @@ export function applyOp(game: IInternalGame, op: IOp) {
         );
         game.chesses[op.player].position = op.position[0];
     } else {
+        game.players[op.player].wallRest -= 1;
         game.pad.addWall(op.position[0][0], op.position[0][1], op.position[1][0], op.position[1][1]);
         game.walls.push({
             position: op.position,
@@ -40,33 +41,55 @@ export function isNoPathOut(game: IInternalGame, nextPad: Pad) {
     for (let i = 0; i < SIZE_H; i++) {
         reachable.push([]);
         for (let j = 0; j < SIZE_W; j++) {
-            reachable[i].push(false);
+            reachable[i].push(-1);
         }
     }
 
-    const dfsCheck = (x: number, y: number) => {
-        if (x < 0 || x >= SIZE_H || y < 0 || y >= SIZE_W) {
+    const dfsCheck = (x: number, y: number, checkId: number) => {
+        if (x < 0 || x >= SIZE_W || y < 0 || y >= SIZE_H) {
             return;
         }
-        if (reachable[x][y]) {
+        if (reachable[x][y] == checkId) {
             return;
         }
-        reachable[x][y] = true;
+        reachable[x][y] = checkId;
 
         for (let i = 0; i < 4; i++) {
+            if (x + _dxy[i][0] < 0 || x + _dxy[i][0] >= SIZE_W || y + _dxy[i][1] < 0 || y + _dxy[i][1] >= SIZE_H)
+                continue;
             if (!nextPad.isWallBetween(x, y, x + _dxy[i][0], y + _dxy[i][1]))
-                dfsCheck(x + _dxy[i][0], y + _dxy[i][1]);
+                dfsCheck(x + _dxy[i][0], y + _dxy[i][1], checkId);
         }
     }
 
-    dfsCheck(0, 0);
-    let result = false;
-    game.chesses.forEach(({ position: [x, y] }) => {
-        if (!reachable[x][y]) {
-            result = true;
+    for (let idx = 0; idx < game.players.length; idx++) {
+        const player = game.players[idx];
+        let chessOk = false;
+        let xRange: number[] = [0, 8];
+        let yRange: number[] = [0, 8];
+        switch (player.startPosition) {
+            case CHESS_INITIAL_POS[0]:/*[4,0]*/yRange = [8, 8];break;
+            case CHESS_INITIAL_POS[1]:/*[0,4]*/xRange = [8, 8];break;
+            case CHESS_INITIAL_POS[2]:/*[4,8]*/yRange = [0, 0];break;
+            case CHESS_INITIAL_POS[3]:/*[8,4]*/xRange = [0, 0];break;
+            default:continue;
         }
-    })
-    return result;
+        const [cx,cy] = game.chesses[idx].position;
+        for (let i = xRange[0]; i <= xRange[1]; i++) {
+            for (let j = yRange[0]; j <= yRange[1]; j++) {
+                dfsCheck(i, j, idx);
+                if(reachable[cx][cy] == idx){
+                    chessOk = true;
+                    break;
+                }
+            }
+            if(chessOk) break;
+        }
+        if(!chessOk){
+            return true;
+        }
+    }
+    return false;
 }
 
 export function initGame(roomId: string, players: IPlayer[]): IInternalGame {
@@ -77,6 +100,7 @@ export function initGame(roomId: string, players: IPlayer[]): IInternalGame {
         walls: [],
         current: 0,
         pad: new Pad(),
+        winMode: WIN_MOD
     };
     for (let i = 0; i < players.length; i++) {
         game.chesses.push({
@@ -110,4 +134,10 @@ export function isWin(game: IInternalGame, playerIndex: number) {
         default:
             throw new Error(`invalid initial position ${game.players[playerIndex].startPosition}`);
     }
+}
+
+export function IIGame2IGame(game: IInternalGame): IGame {
+    let g = { ...game };
+    g.pad = undefined;
+    return g;
 }

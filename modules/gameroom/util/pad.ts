@@ -148,10 +148,6 @@ export class Pad {
         this.data[x * 2 + 1][y * 2 + 1] = -1;
     }
 
-    public toString() {
-        return "";
-    }
-
     /**
      * x,y处放置代码
      * @param x 

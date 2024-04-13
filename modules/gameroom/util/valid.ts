@@ -56,6 +56,9 @@ function isChessOpValid(game: IInternalGame, op: IOp): boolean {
     return false;
 }
 function isWallOpValid(game: IInternalGame, op: IOp): boolean {
+    if(game.players[op.player].wallRest <= 0){
+        return false;
+    }
     let x1 = op.position[0][0];
     let y1 = op.position[0][1];
     let x2 = op.position[1][0];

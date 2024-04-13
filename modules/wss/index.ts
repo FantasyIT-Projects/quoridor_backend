@@ -45,6 +45,7 @@ export default class WSS {
                 this.send(conId, { type: "pong", tick: dat.tick });
                 return;
             }
+            console.log(["MSG", conId, data, dat])
         } catch (e) {
             return;
         }

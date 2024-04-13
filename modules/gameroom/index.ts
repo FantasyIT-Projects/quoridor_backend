@@ -1,6 +1,6 @@
 import { isOpValid } from "./util/valid";
-import { IGame, IInternalGame, IOp, IPlayer, OPERATE_TYPE } from "../../interfaces/game";
-import { applyOp, initGame, isWin } from "./util/game";
+import { IGame, IInternalGame, IOp, IPlayer, OPERATE_TYPE, WIN_JUDGEMENT } from "../../interfaces/game";
+import { applyOp, IIGame2IGame, initGame, isWin } from "./util/game";
 type roomMgrOps = {
     send(group: string, data: Record<string, any> | String, exceptConId?: number): void;
     sendPlayer(conId: number, data: Record<string, any> | String): void;
@@ -43,7 +43,11 @@ export default class Room {
                             this.sendPlayer(player.internalId, { type: "hello" })
                             this.send({
                                 type: "room",
-                                player: this.player
+                                player: this.game ? this.game.players : this.player
+                            });
+                            this.sendPlayer(player.internalId, {
+                                type: "start",
+                                game: IIGame2IGame(this.game)
                             });
                         }, 0);
                         console.log(`玩家${player.name}接管了游戏`);
@@ -96,7 +100,7 @@ export default class Room {
                     this.player.find((p) => p.internalId == conId).internalId = obsWithSameId.internalId;
                 }
                 if (this.game) {
-                    this.sendPlayer(obsWithSameId.internalId, { type: "start", game: this.game });
+                    this.sendPlayer(obsWithSameId.internalId, { type: "start", game: IIGame2IGame(this.game) });
                 }
                 console.log(`玩家${obsWithSameId.name}接管了游戏`);
             } else if (this.game) {//无同ID玩家且游戏已经开始：加入托管名单
@@ -108,7 +112,7 @@ export default class Room {
 
             this.send({
                 type: "room",
-                player: this.player
+                player: this.game ? this.game.players : this.player
             })
         }
     }
@@ -179,7 +183,7 @@ export default class Room {
         this.game = initGame(this.id, this.player);
         this.send({
             type: "start",
-            game: this.game
+            game: IIGame2IGame(this.game)
         });
     }
     onReady(conId: number, data: Record<string, any>) {
@@ -206,13 +210,21 @@ export default class Room {
         this.hasPongPlayer[conId] = delay;
     }
     onNextRound(op: IOp) {
-        if(isWin(this.game, op.player)){
-            const rank = Math.max.apply(this,this.game.players.map(p=>p.win??0))+1;
+        if (isWin(this.game, op.player)) {
+            const rank = Math.max.apply(this, this.game.players.map(p => p.win ?? 0)) + 1;
             this.send({
                 type: "won",
                 player: op.player,
                 rank
             });
+            this.game.players[op.player].win = rank;
+            if (this.game.winMode === WIN_JUDGEMENT.TOP) {
+                return this.onGameOver();
+            }
+            if (this.game.winMode === WIN_JUDGEMENT.RANK && rank === this.game.players.length - 1) {
+                this.game.players.find(p => !p.win).win = this.game.players.length;
+                return this.onGameOver();
+            }
         }
         this.game.current++;
         if (this.game.current >= this.game.players.length) {
@@ -224,7 +236,7 @@ export default class Room {
             if (this.game.current >= this.game.players.length) {
                 this.game.current = 0;
             }
-            if(this.game.current == origin){
+            if (this.game.current == origin) {
                 break;
             }
         }
@@ -242,8 +254,10 @@ export default class Room {
             player: this.game.current
         }
         if (isOpValid(this.game, op)) {
-            applyOp(this.game,op);
+            applyOp(this.game, op);
             this.onNextRound(op);
+        } else {
+            this.sendPlayer(conId, { type: "fail", lastOp: op })
         }
     }
     onWall(conId: number, data: Record<string, any>) {
@@ -254,13 +268,32 @@ export default class Room {
             player: this.game.current
         }
         if (isOpValid(this.game, op)) {
-            this.game.walls.push({
-                position: op.position,
-                player: op.player
-            })
-            applyOp(this.game,op);
-            this.game.players[op.player].wallRest--;
+            applyOp(this.game, op);
             this.onNextRound(op);
+        } else {
+            this.sendPlayer(conId, { type: "fail", lastOp: op })
         }
+    }
+    onGameOver() {
+        this.player = JSON.parse(JSON.stringify(this.game.players));
+        const rank = this.game.players.map((player) => {
+            return [
+                player.win, player.internalId
+            ]
+        })
+            .filter(p => p[0])
+            .sort((p1, p2) => p2[0] - p1[0])
+            .map(p => p[1]);
+        this.player.forEach((player, index) => {
+            player.win = undefined
+            player.ready = false;
+            player.startPosition = null;
+            player.wallRest = undefined;
+        });
+        this.send({
+            type: "end",
+            players: this.player,
+            rank
+        });
     }
 }

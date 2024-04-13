@@ -38,7 +38,7 @@ export type IPlayer = {
      */
     delay?:number,
     /**
-     * 玩家是否获胜
+     * 玩家是否获胜.0表示未胜利,大于0表示排名
      */
     win?:number,
     /**
@@ -50,6 +50,10 @@ export type IPlayer = {
 export enum OPERATE_TYPE{
     CHESS="chess",
     WALL="wall"
+}
+export enum WIN_JUDGEMENT{
+    TOP="top",
+    RANK="rank"
 }
 export type IOp = {
     type:OPERATE_TYPE,
@@ -69,8 +73,9 @@ export type IGame = {
     current:number,
     players:IPlayer[],
     chesses:IChess[],
-    walls:IWall[]
+    walls:IWall[],
 }
 export type IInternalGame = IGame & {
-    pad:Pad
+    pad:Pad,
+    winMode:WIN_JUDGEMENT
 }
