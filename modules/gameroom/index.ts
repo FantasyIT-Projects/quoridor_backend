@@ -199,9 +199,10 @@ export default class Room {
         }
     }
     onMessage(conId: number, data: Record<string, any>) {
+        
         this.send({
             type: "msg",
-            from: data.from,
+            from: (this.game?this.game.players:this.player).findIndex((p) => p.internalId == conId),
             msg: data.msg
         });
     }
